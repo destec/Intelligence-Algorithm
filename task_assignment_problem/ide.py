@@ -35,41 +35,58 @@ def generate_common_cost(n, r, common_cost_min, common_cost_max):
 def generate_common_limitation(r, common_limitation_min, common_limitation_max):
     return common_limitation_min + (common_limitation_max - common_limitation_min) * numpy.random.random_sample((r, 1))
 
-def evalCost(n, r, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation, individual):
+def evalCost(n, r, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation, l, individual):
     list = numpy.zeros((n,r))
     for i, processor in enumerate(individual):
         list[processor][i] = 1
-    cost = numpy.sum(list * execution_cost)
+    cost = 0
+    exec_cost = numpy.sum(list * execution_cost)
+    proc_cost = sum(numpy.transpose(list * processing_cost))
+    mem_cost = sum(numpy.transpose(list * memory_cost)) 
+
     i = 0
     j = 0
     for row in communication_cost:
         for element in row:
             if element != 0 and (individual[i] != individual[j]):
-                cost += element
+                exec_cost += element
             j += 1
         i += 1
         j = 0
+
+    for proc_constraint in numpy.subtract(proc_cost, numpy.transpose(processing_limitation)).tolist():
+        # print proc_constraint
+        total_proc_constraint = 0
+        if proc_constraint < 0:
+            total_proc_constraint += l * (-1) * proc_constraint
+    for mem_constraint in numpy.subtract(mem_cost, numpy.transpose(memory_limitation)).tolist():
+        total_mem_constraint = 0
+        if mem_constraint < 0:
+            total_mem_constraint += l * (-1) * mem_constraint
+
+    cost = exec_cost + total_proc_constraint + total_mem_constraint
     return (cost,)
 
-def mutDE(y, a, b, c, f):
-    size = len(y)
-    for i in range(len(y)):
-        y[i] = a[i] + f*(b[i]-c[i])
-        if y[i] > n - 1:
-            y[i] = n - 1
-        elif y[i] < 0:
-            y[i] = 0
-    return y
+# TODO: abstract the mutate and exponentail method
+# def mutDE(y, a, b, c, f):
+#     size = len(y)
+#     for i in range(len(y)):
+#         y[i] = a[i] + f*(b[i]-c[i])
+#         if y[i] > n - 1:
+#             y[i] = n - 1
+#         elif y[i] < 0:
+#             y[i] = 0
+#     return y
 
-def cxExponential(x, y, cr):
-    size = len(x)
-    index = random.randrange(size)
-    # Loop on the indices index -> end, then on 0 -> index
-    for i in chain(range(index, size), range(0, index)):
-        x[i] = y[i]
-        if random.random() < cr:
-            break
-    return x 
+# def cxExponential(x, y, cr):
+#     size = len(x)
+#     index = random.randrange(size)
+#     # Loop on the indices index -> end, then on 0 -> index
+#     for i in chain(range(index, size), range(0, index)):
+#         x[i] = y[i]
+#         if random.random() < cr:
+#             break
+#     return x 
 
 def main():
 
@@ -78,10 +95,14 @@ def main():
     r = 5
     # the number of the processor
     n = 3
+    # the number of individual in each iteration
     M = 30
+    # the iteration times
     K = 50
     cr_k = generate_cr(K)
     F = 1
+    # define the lambda value
+    l = 10 ** 10
 
     # execution cost setup
     exec_cost_min = 0
@@ -100,7 +121,7 @@ def main():
     processing_cost = generate_common_cost(n, r, proc_cost_min, proc_cost_max)
     proc_limitation_min = 50
     proc_limitation_max = 250
-    processing_limitation = generate_common_limitation(r, proc_limitation_min, proc_limitation_max)
+    processing_limitation = generate_common_limitation(n, proc_limitation_min, proc_limitation_max)
 
     # memory cost setup
     mem_cost_min = 1
@@ -108,7 +129,7 @@ def main():
     memory_cost = generate_common_cost(n, r, mem_cost_min, mem_cost_max)
     mem_limitation_min = 50
     mem_limitation_max = 250
-    memory_limitation = generate_common_limitation(r, mem_cost_min, mem_cost_max)
+    memory_limitation = generate_common_limitation(n, mem_cost_min, mem_cost_max)
     
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin)
@@ -118,9 +139,9 @@ def main():
     toolbox.register("individual", tools.initRepeat, creator.Individual, toolbox.task_assignment, n=r)
     toolbox.register("population", tools.initRepeat, list, toolbox.individual)
     toolbox.register("select", tools.selRandom, k=3)
-    toolbox.register("mutate", mutDE, f=1)
-    toolbox.register("mate", cxExponential, cr=0.1)
-    toolbox.register("evaluate", evalCost, n, r, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation)
+    # toolbox.register("mutate", mutDE, f=1)
+    # toolbox.register("mate", cxExponential, cr=0.1)
+    toolbox.register("evaluate", evalCost, n, r, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation, l)
     
     pop = toolbox.population(n=M)
     hof = tools.HallOfFame(1)
@@ -143,24 +164,41 @@ def main():
     print(logbook.stream)
     
     for g in range(1, K):
+        # this record is used to calculate
+        # fmin: the minimum value of individual
+        # fman: the maximum value of individual
+        # favg: the average value of individual
+        before_record = stats.compile(pop)
+        fmin = before_record["min"]
+        fmax = before_record["max"]
+        favg = before_record["avg"]
         for k, agent in enumerate(pop):
             a, b, c = toolbox.select(pop)
-            # x = toolbox.clone(agent)
-            y = toolbox.clone(agent)
-            # y = toolbox.mutate(y, a, b, c)
-            # z = toolbox.mate(x, y)
+            # the candidate v
+            v = toolbox.clone(agent)
+            # the f value of candidate v
+            fv = toolbox.evaluate(v)
+            if(favg - fmin == 0):
+                Fi = (fv - fmin) / 1
+            else:
+                Fi = (fv - fmin) / (favg - fmin)
+            j = numpy.random.random_sample()
+            if Fi < 2:
+                Fi = Fi * j
+            else:
+                Fi = Fi * 2
             index = random.randrange(M)
             for i, value in enumerate(agent):
                 if i == index or random.random() < cr_k[g-1]:
-                    y[i] = a[i] + F*(b[i]-c[i])
-                    if y[i] > n - 1:
-                        y[i] = n - 1
-                    elif y[i] < 0:
-                        y[i] = 0
-            y.fitness.values = toolbox.evaluate(y)
-            if y.fitness > agent.fitness:
-                pop[k] = y
+                    v[i] = (int)(a[i] + Fi.tolist()[0]*(b[i]-c[i]))
+                    # a little trick with the task
+                    if v[i] > n - 1 or v[i] < 0:
+                        v[i] = (int)(numpy.random.random_sample())
+            v.fitness.values = toolbox.evaluate(v)
+            if v.fitness > agent.fitness:
+                pop[k] = v
         hof.update(pop)
+        # this record is for display the result
         record = stats.compile(pop)
         logbook.record(gen=g, evals=len(pop), **record)
         print(logbook.stream)
