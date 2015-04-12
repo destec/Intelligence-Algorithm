@@ -13,7 +13,6 @@ def generate_cr(K):
     CR_MIN = 0.1
     B = numpy.log(CR_MAX / CR_MIN) / (K ** 2 - 1)
     A = CR_MIN * numpy.exp(-1 * B)
-
     iteration = numpy.linspace(1, K, K)
     cr_k = numpy.exp(B * iteration ** 2) * A
     return cr_k
@@ -59,6 +58,7 @@ def evalCost(n, r, execution_cost, communication_cost, processing_cost, processi
         total_proc_constraint = 0
         if proc_constraint < 0:
             total_proc_constraint += l * (-1) * proc_constraint
+
     for mem_constraint in numpy.subtract(mem_cost, numpy.transpose(memory_limitation)).tolist():
         total_mem_constraint = 0
         if mem_constraint < 0:
@@ -91,16 +91,21 @@ def evalCost(n, r, execution_cost, communication_cost, processing_cost, processi
 def main():
 
     # differential evolution parameters
+
     # the number of the task
-    r = 5
+    r = 10
+
     # the number of the processor
-    n = 3
+    n = 6
+
     # the number of individual in each iteration
     M = 30
+
     # the iteration times
     K = 50
+
     cr_k = generate_cr(K)
-    F = 1
+
     # define the lambda value
     l = 10 ** 10
 
@@ -110,12 +115,13 @@ def main():
     execution_cost = generate_common_cost(n, r, exec_cost_min, exec_cost_max)
 
     # communication cost setup
-    comm_density = 0.3
+    comm_density = 0.8
     comm_cost_min = 0
     comm_cost_max = 50
     communication_cost = generate_communication_cost(r, comm_density, comm_cost_min, comm_cost_max)
 
     # processing cost setup
+
     proc_cost_min = 1
     proc_cost_max = 50
     processing_cost = generate_common_cost(n, r, proc_cost_min, proc_cost_max)
@@ -130,7 +136,7 @@ def main():
     mem_limitation_min = 50
     mem_limitation_max = 250
     memory_limitation = generate_common_limitation(n, mem_cost_min, mem_cost_max)
-    
+
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", list, fitness=creator.FitnessMin)
 
@@ -142,7 +148,7 @@ def main():
     # toolbox.register("mutate", mutDE, f=1)
     # toolbox.register("mate", cxExponential, cr=0.1)
     toolbox.register("evaluate", evalCost, n, r, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation, l)
-    
+
     pop = toolbox.population(n=M)
     hof = tools.HallOfFame(1)
     stats = tools.Statistics(lambda ind: ind.fitness.values)
@@ -150,10 +156,10 @@ def main():
     stats.register("std", numpy.std)
     stats.register("min", numpy.min)
     stats.register("max", numpy.max)
-    
+
     logbook = tools.Logbook()
     logbook.header = "gen", "evals", "std", "min", "avg", "max"
-    
+
     # Evaluate the individuals
     fitnesses = toolbox.map(toolbox.evaluate, pop)
     for ind, fit in zip(pop, fitnesses):
@@ -162,8 +168,11 @@ def main():
     record = stats.compile(pop)
     logbook.record(gen=0, evals=len(pop), **record)
     print(logbook.stream)
-    
+
+    # result is used for record the minimum value in each iteration
+    result = []
     for g in range(1, K):
+
         # this record is used to calculate
         # fmin: the minimum value of individual
         # fman: the maximum value of individual
@@ -172,21 +181,26 @@ def main():
         fmin = before_record["min"]
         fmax = before_record["max"]
         favg = before_record["avg"]
+
         for k, agent in enumerate(pop):
             a, b, c = toolbox.select(pop)
             # the candidate v
             v = toolbox.clone(agent)
             # the f value of candidate v
             fv = toolbox.evaluate(v)
+
             if(favg - fmin == 0):
                 Fi = (fv - fmin) / 1
             else:
                 Fi = (fv - fmin) / (favg - fmin)
+
             j = numpy.random.random_sample()
+
             if Fi < 2:
                 Fi = Fi * j
             else:
                 Fi = Fi * 2
+
             index = random.randrange(M)
             for i, value in enumerate(agent):
                 if i == index or random.random() < cr_k[g-1]:
@@ -197,13 +211,25 @@ def main():
             v.fitness.values = toolbox.evaluate(v)
             if v.fitness > agent.fitness:
                 pop[k] = v
+
         hof.update(pop)
         # this record is for display the result
         record = stats.compile(pop)
         logbook.record(gen=g, evals=len(pop), **record)
+        # add result into result list
+        result.append(record["min"])
         print(logbook.stream)
 
+    result.append(hof[0].fitness.values[0])
     print("Best individual is ", hof[0], hof[0].fitness.values[0])
-    
+    import matplotlib.pyplot as plt
+    xAxis = numpy.linspace(0, len(result))
+    plt.plot(xAxis, result, linewidth=2, linestyle="-")
+    plt.title("IDE Algorithm for task task assignment problem\nParameters: number of tasks: " + str(r) + ", number of processor: " + str(n))
+    plt.xlabel("iteration")
+    plt.ylabel("function value")
+    plt.grid(True)
+    plt.show()
+
 if __name__ == "__main__":
     main()
