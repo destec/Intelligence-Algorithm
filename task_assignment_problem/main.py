@@ -114,8 +114,8 @@ def main():
   # Common settings
   r = 10
   n = 6
-  M = 30
-  K = 50
+  M = 50
+  K = 80
   exec_cost_min = 0
   exec_cost_max = 200
   execution_cost = utils.generate_common_cost(n, r, exec_cost_min, exec_cost_max)
@@ -156,7 +156,7 @@ def main():
   # IDE Algorithm
   ide_result = ide.main(r, n, M, K, cr_min, cr_max, l, execution_cost, communication_cost, processing_cost, processing_limitation, memory_cost, memory_limitation)
 
-  xAxis = numpy.linspace(0, len(ode_result))
+  xAxis = numpy.linspace(0, K-1, num=K)
   plt.plot(xAxis, ode_result, linewidth=2, linestyle="-", label="ODE")
   plt.plot(xAxis, jade_result, linewidth=2, linestyle="-", label="JADE")
   plt.plot(xAxis, ide_result, linewidth=2, linestyle="-", label="IDE")
